@@ -1,0 +1,74 @@
+================================================================================
+ESP32 + INMP441 I2S MEMS MICROPHONE - BREADBOARD CONNECTION GUIDE
+================================================================================
+
+COMPONENT PLACEMENT ON BREADBOARD:
+-----------------------------------
+
+ROW 1-5: ESP32 DevKit (30-pin)
+ROW 10-13: INMP441 MEMS Microphone Module
+
+PIN-TO-PIN CONNECTIONS:
+-----------------------
+
+ESP32 Side          →    INMP441 Side         →    Breadboard Position
+----------------------------------------------------------------------------
+3.3V (Pin 1)        →    VDD                  →    Power Rail (+)
+GND (Pin 2)         →    GND                  →    Power Rail (-)
+GPIO32 (Pin 8)      →    SD (Serial Data)     →    Row 11, Column C
+GPIO25 (Pin 10)     →    WS (Word Select)     →    Row 12, Column C
+GPIO33 (Pin 13)     →    SCK (Serial Clock)   →    Row 13, Column C
+GND (Pin 38)        →    L/R (Left/Right)     →    Power Rail (-)
+
+ADDITIONAL COMPONENTS:
+---------------------
+• LED (Status Indicator):
+  - GPIO2 → 220Ω Resistor → LED Anode → LED Cathode → GND
+
+• Push Button (Start/Stop Recording):
+  - GPIO4 → Button Pin 1
+  - Button Pin 2 → GND
+  - GPIO4 → 10kΩ Pull-up Resistor → 3.3V
+
+POWER SUPPLY:
+-------------
+• Connect ESP32 to USB power (5V, 1A minimum)
+• OR use external 5V power supply via VIN pin
+
+VISUAL ASCII DIAGRAM:
+--------------------
+
+        [USB Power]
+             |
+    +--------+--------+
+    |                 |
+    |   ESP32 DevKit  |
+    |                 |
+    | 3.3V●    ●GND   |─────┐
+    | IO32●           |     │
+    | IO25●           |     │
+    | IO33●           |     │
+    | GND●   ●GPIO2   |──┐  │
+    | ●GPIO4          |  │  │
+    +--------+--------+  │  │
+             |           │  │
+         [WiFi]          │  │
+                         │  │
+                    ┌────┴──┴────┐
+                    │  INMP441    │
+                    │  MEMS MIC   │
+                    │             │
+                    │ VDD  GND    │
+                    │ SD   WS SCK │
+                    │ L/R         │
+                    └─────────────┘
+
+TESTING CHECKLIST:
+-----------------
+☐ Verify 3.3V on VDD pin (use multimeter)
+☐ Check continuity on all connections
+☐ Ensure L/R is connected to GND (for left channel)
+☐ Test WiFi connectivity before audio streaming
+☐ Verify I2S pins are correctly mapped in code
+
+================================================================================
