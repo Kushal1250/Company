@@ -1,0 +1,2000 @@
+# 🎯 COMPLETE PROJECT SETUP GUIDE - VoiceMind Meeting Intelligence System
+I've analyzed all the provided information and created a **comprehensive, step-by-step implementation guide** with proper folder structure, MySQL database, VS Code setup, and complete workflow.
+---
+## 📁 PROJECT FOLDER STRUCTURE
+### **Tree Structure**
+```
+VoiceMind-Meeting-System/
+│
+├── hardware/
+│ ├── esp32_audio_recorder/
+│ │ └── esp32_audio_recorder.ino # ESP32 Arduino code
+│ └── circuit_diagrams/
+│ └── breadboard_connections.txt # Pin connections
+│
+├── backend/
+│ ├── server.py # Main FastAPI server
+│ ├── database.py # Database connection & models
+│ ├── audio_processor.py # Audio processing logic
+│ ├── transcription_service.py # Whisper integration
+│ ├── qa_service.py # AI Q&A with LLM
+│ ├── config.py # Configuration settings
+│ └── requirements.txt # Python dependencies
+│
+├── client/
+│ └── meeting_client.py # CLI client interface
+│
+├── database/
+│ ├── schema.sql # MySQL database schema
+│ └── init_db.py # Database initialization script
+│
+├── uploads/
+│ └── audio_chunks/ # Temporary audio storage
+│
+├── logs/
+│ └── app.log # Application logs
+│
+├── .env # Environment variables
+├── README.md # Project documentation
+└── setup.sh # Automated setup script
+```
+---
+## 🔨 STEP 1: CREATE PROJECT STRUCTURE
+### **Commands to Create Folders and Files**
+Open **VS Code Terminal** (Ctrl+` or View > Terminal) and run:
+```bash
+# Create main project directory
+mkdir VoiceMind-Meeting-System
+cd VoiceMind-Meeting-System
+# Create folder structure
+mkdir -p hardware/esp32_audio_recorder
+mkdir -p hardware/circuit_diagrams
+mkdir -p backend
+mkdir -p client
+mkdir -p database
+mkdir -p uploads/audio_chunks
+mkdir -p logs
+# Create files
+touch hardware/esp32_audio_recorder/esp32_audio_recorder.ino
+touch hardware/circuit_diagrams/breadboard_connections.txt
+touch backend/server.py
+touch backend/database.py
+touch backend/audio_processor.py
+touch backend/transcription_service.py
+touch backend/qa_service.py
+touch backend/config.py
+touch backend/requirements.txt
+touch client/meeting_client.py
+touch database/schema.sql
+touch database/init_db.py
+touch .env
+touch README.md
+touch setup.sh
+# Make setup script executable
+chmod +x setup.sh
+```
+---
+## 📊 STEP 2: BREADBOARD PIN CONNECTIONS
+### **File: `hardware/circuit_diagrams/breadboard_connections.txt`**
+```
+================================================================================
+ESP32 + INMP441 I2S MEMS MICROPHONE - BREADBOARD CONNECTION GUIDE
+================================================================================
+COMPONENT PLACEMENT ON BREADBOARD:
+-----------------------------------
+ROW 1-5: ESP32 DevKit (30-pin)
+ROW 10-13: INMP441 MEMS Microphone Module
+PIN-TO-PIN CONNECTIONS:
+-----------------------
+ESP32 Side → INMP441 Side → Breadboard Position
+----------------------------------------------------------------------------
+3.3V (Pin 1) → VDD → Power Rail (+)
+GND (Pin 2) → GND → Power Rail (-)
+GPIO32 (Pin 8) → SD (Serial Data) → Row 11, Column C
+GPIO25 (Pin 10) → WS (Word Select) → Row 12, Column C
+GPIO33 (Pin 13) → SCK (Serial Clock) → Row 13, Column C
+GND (Pin 38) → L/R (Left/Right) → Power Rail (-)
+ADDITIONAL COMPONENTS:
+---------------------
+• LED (Status Indicator):
+  - GPIO2 → 220Ω Resistor → LED Anode → LED Cathode → GND
+• Push Button (Start/Stop Recording):
+  - GPIO4 → Button Pin 1
+  - Button Pin 2 → GND
+  - GPIO4 → 10kΩ Pull-up Resistor → 3.3V
+POWER SUPPLY:
+-------------
+• Connect ESP32 to USB power (5V, 1A minimum)
+• OR use external 5V power supply via VIN pin
+VISUAL ASCII DIAGRAM:
+--------------------
+        [USB Power]
+             |
+    +--------+--------+
+    | |
+    | ESP32 DevKit |
+    | |
+    | 3.3V● ●GND |─────┐
+    | IO32● | │
+    | IO25● | │
+    | IO33● | │
+    | GND● ●GPIO2 |──┐ │
+    | ●GPIO4 | │ │
+    +--------+--------+ │ │
+             | │ │
+         [WiFi] │ │
+                         │ │
+                    ┌────┴──┴────┐
+                    │ INMP441 │
+                    │ MEMS MIC │
+                    │ │
+                    │ VDD GND │
+                    │ SD WS SCK │
+                    │ L/R │
+                    └─────────────┘
+TESTING CHECKLIST:
+-----------------
+☐ Verify 3.3V on VDD pin (use multimeter)
+☐ Check continuity on all connections
+☐ Ensure L/R is connected to GND (for left channel)
+☐ Test WiFi connectivity before audio streaming
+☐ Verify I2S pins are correctly mapped in code
+================================================================================
+```
+---
+## 🗄️ STEP 3: MYSQL DATABASE SCHEMA
+### **File: `database/schema.sql`**
+```sql
+-- ============================================================================
+-- VoiceMind Meeting Intelligence System - MySQL Database Schema
+-- ============================================================================
+-- Drop existing database if exists (WARNING: This deletes all data!)
+DROP DATABASE IF EXISTS voicemind_db;
+-- Create database
+CREATE DATABASE voicemind_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE voicemind_db;
+-- ============================================================================
+-- TABLE: meetings
+-- Stores meeting metadata and full transcripts
+-- ============================================================================
+CREATE TABLE meetings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    meeting_id VARCHAR(100) UNIQUE NOT NULL,
+    title VARCHAR(255),
+    start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    end_time DATETIME NULL,
+    status ENUM('recording', 'processing', 'completed', 'failed') DEFAULT 'recording',
+    language VARCHAR(10) DEFAULT 'auto',
+    full_transcript TEXT,
+    summary TEXT,
+    agenda TEXT,
+    total_chunks INT DEFAULT 0,
+    total_duration FLOAT DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_meeting_id (meeting_id),
+    INDEX idx_status (status),
+    INDEX idx_start_time (start_time)
+) ENGINE=InnoDB;
+-- ============================================================================
+-- TABLE: audio_chunks
+-- Stores individual audio segments with transcriptions
+-- ============================================================================
+CREATE TABLE audio_chunks (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    meeting_id VARCHAR(100) NOT NULL,
+    chunk_number INT NOT NULL,
+    chunk_timestamp BIGINT NOT NULL,
+    audio_data LONGBLOB,
+    audio_file_path VARCHAR(500),
+    sample_rate INT DEFAULT 16000,
+    duration FLOAT,
+    transcript_segment TEXT,
+    language_detected VARCHAR(10),
+    confidence_score FLOAT,
+    speaker_id VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (meeting_id) REFERENCES meetings(meeting_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_chunk (meeting_id, chunk_number),
+    INDEX idx_meeting_chunks (meeting_id, chunk_number),
+    INDEX idx_timestamp (chunk_timestamp)
+) ENGINE=InnoDB;
+-- ============================================================================
+-- TABLE: qa_history
+-- Stores question-answer interactions for each meeting
+-- ============================================================================
+CREATE TABLE qa_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    meeting_id VARCHAR(100) NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    context_used TEXT,
+    model_used VARCHAR(50),
+    response_time FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (meeting_id) REFERENCES meetings(meeting_id) ON DELETE CASCADE,
+    INDEX idx_meeting_qa (meeting_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB;
+-- ============================================================================
+-- TABLE: system_logs
+-- Stores system events and errors
+-- ============================================================================
+CREATE TABLE system_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    log_level ENUM('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') DEFAULT 'INFO',
+    meeting_id VARCHAR(100),
+    message TEXT NOT NULL,
+    stack_trace TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_log_level (log_level),
+    INDEX idx_meeting_logs (meeting_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB;
+-- ============================================================================
+-- VIEWS: Useful aggregated views
+-- ============================================================================
+-- View: Meeting statistics
+CREATE VIEW meeting_stats AS
+SELECT
+    m.meeting_id,
+    m.title,
+    m.status,
+    m.start_time,
+    m.end_time,
+    TIMESTAMPDIFF(MINUTE, m.start_time, m.end_time) AS duration_minutes,
+    m.total_chunks,
+    COUNT(ac.id) AS chunks_stored,
+    SUM(ac.duration) AS total_audio_duration,
+    COUNT(qa.id) AS questions_asked
+FROM meetings m
+LEFT JOIN audio_chunks ac ON m.meeting_id = ac.meeting_id
+LEFT JOIN qa_history qa ON m.meeting_id = qa.meeting_id
+GROUP BY m.meeting_id;
+-- ============================================================================
+-- STORED PROCEDURES
+-- ============================================================================
+DELIMITER //
+-- Procedure: Get meeting summary with statistics
+CREATE PROCEDURE GetMeetingSummary(IN p_meeting_id VARCHAR(100))
+BEGIN
+    SELECT
+        m.*,
+        COUNT(ac.id) AS total_chunks_stored,
+        SUM(ac.duration) AS total_duration_seconds,
+        COUNT(DISTINCT ac.language_detected) AS languages_detected,
+        COUNT(qa.id) AS total_questions_asked
+    FROM meetings m
+    LEFT JOIN audio_chunks ac ON m.meeting_id = ac.meeting_id
+    LEFT JOIN qa_history qa ON m.meeting_id = qa.meeting_id
+    WHERE m.meeting_id = p_meeting_id
+    GROUP BY m.id;
+END //
+-- Procedure: Clean up old meetings (older than 30 days)
+CREATE PROCEDURE CleanupOldMeetings()
+BEGIN
+    DELETE FROM meetings
+    WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
+    AND status = 'completed';
+END //
+DELIMITER ;
+-- ============================================================================
+-- INITIAL DATA (Optional test data)
+-- ============================================================================
+-- Insert sample meeting for testing
+INSERT INTO meetings (meeting_id, title, status)
+VALUES ('test_meeting_001', 'Test Meeting', 'recording');
+-- ============================================================================
+-- GRANT PERMISSIONS (Adjust username/password as needed)
+-- ============================================================================
+-- Create application user (run this separately after database creation)
+-- CREATE USER 'voicemind_user'@'localhost' IDENTIFIED BY 'your_secure_password';
+-- GRANT ALL PRIVILEGES ON voicemind_db.* TO 'voicemind_user'@'localhost';
+-- FLUSH PRIVILEGES;
+-- ============================================================================
+-- END OF SCHEMA
+-- ============================================================================
+```
+---
+## 🐍 STEP 4: BACKEND IMPLEMENTATION
+### **File: `backend/config.py`**
+```python
+"""
+Configuration settings for VoiceMind Meeting System
+"""
+import os
+from dotenv import load_dotenv
+load_dotenv()
+# Server Configuration
+SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("SERVER_PORT", 8000))
+# Database Configuration (MySQL)
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_NAME = os.getenv("DB_NAME", "voicemind_db")
+# OpenAI API Configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# Audio Processing Configuration
+SAMPLE_RATE = 16000
+CHUNK_DURATION_MS = 10000 # 10 seconds
+UPLOAD_FOLDER = "uploads/audio_chunks"
+LOG_FOLDER = "logs"
+# Whisper Model Configuration
+WHISPER_MODEL = "base" # Options: tiny, base, small, medium, large
+# LLM Configuration
+LLM_MODEL = "gpt-3.5-turbo"
+LLM_TEMPERATURE = 0.7
+MAX_TOKENS = 500
+# Create necessary directories
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(LOG_FOLDER, exist_ok=True)
+```
+---
+### **File: `backend/database.py`**
+```python
+"""
+Database connection and ORM models using MySQL
+"""
+import mysql.connector
+from mysql.connector import Error
+from contextlib import contextmanager
+import logging
+from config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+class Database:
+    """MySQL database connection manager"""
+   
+    def __init__(self):
+        self.connection = None
+   
+    def connect(self):
+        """Establish database connection"""
+        try:
+            self.connection = mysql.connector.connect(
+                host=DB_HOST,
+                port=DB_PORT,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
+                charset='utf8mb4',
+                use_unicode=True
+            )
+            if self.connection.is_connected():
+                logger.info("Successfully connected to MySQL database")
+                return self.connection
+        except Error as e:
+            logger.error(f"Error connecting to MySQL: {e}")
+            raise
+   
+    def close(self):
+        """Close database connection"""
+        if self.connection and self.connection.is_connected():
+            self.connection.close()
+            logger.info("MySQL connection closed")
+   
+    @contextmanager
+    def get_cursor(self, dictionary=True):
+        """Context manager for database cursor"""
+        cursor = self.connection.cursor(dictionary=dictionary)
+        try:
+            yield cursor
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        finally:
+            cursor.close()
+# Global database instance
+db = Database()
+def init_database():
+    """Initialize database connection"""
+    db.connect()
+def close_database():
+    """Close database connection"""
+    db.close()
+# ============================================================================
+# Database Helper Functions
+# ============================================================================
+def create_meeting(meeting_id: str, title: str = None, language: str = "auto"):
+    """Create a new meeting record"""
+    with db.get_cursor() as cursor:
+        sql = """
+            INSERT INTO meetings (meeting_id, title, status, language)
+            VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(sql, (meeting_id, title, 'recording', language))
+        return cursor.lastrowid
+def get_meeting(meeting_id: str):
+    """Retrieve meeting by ID"""
+    with db.get_cursor() as cursor:
+        sql = "SELECT * FROM meetings WHERE meeting_id = %s"
+        cursor.execute(sql, (meeting_id,))
+        return cursor.fetchone()
+def update_meeting_status(meeting_id: str, status: str, transcript: str = None, summary: str = None):
+    """Update meeting status and transcript"""
+    with db.get_cursor() as cursor:
+        sql = """
+            UPDATE meetings
+            SET status = %s, full_transcript = %s, summary = %s, end_time = NOW()
+            WHERE meeting_id = %s
+        """
+        cursor.execute(sql, (status, transcript, summary, meeting_id))
+def save_audio_chunk(meeting_id: str, chunk_number: int, chunk_timestamp: int,
+                     audio_data: bytes, sample_rate: int, transcript: str = None):
+    """Save audio chunk to database"""
+    with db.get_cursor() as cursor:
+        sql = """
+            INSERT INTO audio_chunks
+            (meeting_id, chunk_number, chunk_timestamp, audio_data, sample_rate, transcript_segment)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            audio_data = VALUES(audio_data),
+            transcript_segment = VALUES(transcript_segment)
+        """
+        cursor.execute(sql, (meeting_id, chunk_number, chunk_timestamp, audio_data, sample_rate, transcript))
+       
+        # Update total chunks count
+        sql_update = """
+            UPDATE meetings
+            SET total_chunks = (SELECT COUNT(*) FROM audio_chunks WHERE meeting_id = %s)
+            WHERE meeting_id = %s
+        """
+        cursor.execute(sql_update, (meeting_id, meeting_id))
+def get_all_chunks(meeting_id: str):
+    """Retrieve all audio chunks for a meeting"""
+    with db.get_cursor() as cursor:
+        sql = """
+            SELECT chunk_number, transcript_segment, duration, chunk_timestamp
+            FROM audio_chunks
+            WHERE meeting_id = %s
+            ORDER BY chunk_number
+        """
+        cursor.execute(sql, (meeting_id,))
+        return cursor.fetchall()
+def save_qa_interaction(meeting_id: str, question: str, answer: str, model_used: str, response_time: float):
+    """Save Q&A interaction"""
+    with db.get_cursor() as cursor:
+        sql = """
+            INSERT INTO qa_history (meeting_id, question, answer, model_used, response_time)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql, (meeting_id, question, answer, model_used, response_time))
+def list_all_meetings():
+    """List all meetings"""
+    with db.get_cursor() as cursor:
+        sql = """
+            SELECT meeting_id, title, status, start_time, end_time, total_chunks
+            FROM meetings
+            ORDER BY start_time DESC
+        """
+        cursor.execute(sql)
+        return cursor.fetchall()
+def log_system_event(level: str, message: str, meeting_id: str = None, stack_trace: str = None):
+    """Log system event"""
+    with db.get_cursor() as cursor:
+        sql = """
+            INSERT INTO system_logs (log_level, meeting_id, message, stack_trace)
+            VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(sql, (level, meeting_id, message, stack_trace))
+```
+---
+### **File: `backend/requirements.txt`**
+```txt
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+mysql-connector-python==8.2.0
+openai==1.3.5
+pydantic==2.5.0
+numpy==1.24.3
+scipy==1.11.4
+```
+---
+### **File: `backend/transcription_service.py`**
+```python
+"""
+Speech-to-Text transcription service using OpenAI Whisper API
+"""
+import openai
+import logging
+import io
+import wave
+from config import OPENAI_API_KEY, SAMPLE_RATE
+openai.api_key = OPENAI_API_KEY
+logger = logging.getLogger(__name__)
+def transcribe_audio(audio_data: bytes, sample_rate: int = SAMPLE_RATE, language: str = None):
+    """
+    Transcribe audio using OpenAI Whisper API
+   
+    Args:
+        audio_data: Raw audio bytes (PCM format)
+        sample_rate: Audio sample rate
+        language: Language code (e.g., 'en', 'es', 'hi') or None for auto-detect
+   
+    Returns:
+        dict: Transcription result with text and detected language
+    """
+    try:
+        # Convert raw PCM to WAV format
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1) # Mono
+            wav_file.setsampwidth(2) # 16-bit
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(audio_data)
+       
+        wav_buffer.seek(0)
+        wav_buffer.name = "audio.wav" # Whisper API requires a filename
+       
+        # Call Whisper API
+        transcript = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=wav_buffer,
+            language=language if language and language != "auto" else None,
+            response_format="verbose_json"
+        )
+       
+        logger.info(f"Transcription successful. Detected language: {transcript.language}")
+       
+        return {
+            'text': transcript.text,
+            'language': transcript.language,
+            'duration': transcript.duration if hasattr(transcript, 'duration') else None
+        }
+   
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        return {
+            'text': '',
+            'language': 'unknown',
+            'error': str(e)
+        }
+```
+---
+### **File: `backend/qa_service.py`**
+```python
+"""
+AI-powered Question Answering service using OpenAI GPT
+"""
+import openai
+import logging
+import time
+from config import OPENAI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, MAX_TOKENS
+openai.api_key = OPENAI_API_KEY
+logger = logging.getLogger(__name__)
+def answer_question(transcript: str, question: str):
+    """
+    Answer questions about the meeting transcript using GPT
+   
+    Args:
+        transcript: Full meeting transcript
+        question: User question
+   
+    Returns:
+        dict: Answer and metadata
+    """
+    start_time = time.time()
+   
+    try:
+        system_prompt = """You are an AI meeting assistant. Your task is to answer questions about meetings based on the provided transcript.
+       
+Guidelines:
+- Be concise and accurate
+- Quote relevant parts of the transcript when applicable
+- If the answer is not in the transcript, say so clearly
+- Extract action items, decisions, and key points when asked
+- Identify speakers if mentioned in the transcript"""
+        user_prompt = f"""Meeting Transcript:
+{transcript}
+Question: {question}
+Please provide a clear and helpful answer based on the transcript."""
+        response = openai.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=LLM_TEMPERATURE,
+            max_tokens=MAX_TOKENS
+        )
+       
+        answer = response.choices[0].message.content
+        response_time = time.time() - start_time
+       
+        logger.info(f"Q&A completed in {response_time:.2f}s")
+       
+        return {
+            'answer': answer,
+            'model': LLM_MODEL,
+            'response_time': response_time,
+            'tokens_used': response.usage.total_tokens if hasattr(response, 'usage') else None
+        }
+   
+    except Exception as e:
+        logger.error(f"Q&A error: {e}")
+        return {
+            'answer': f"Error generating answer: {str(e)}",
+            'model': LLM_MODEL,
+            'response_time': time.time() - start_time,
+            'error': str(e)
+        }
+def generate_summary(transcript: str):
+    """Generate meeting summary"""
+    return answer_question(
+        transcript,
+        "Please provide a comprehensive summary of this meeting including key discussion points, decisions made, and any action items."
+    )
+def extract_agenda(transcript: str):
+    """Extract meeting agenda"""
+    return answer_question(
+        transcript,
+        "What was the agenda of this meeting? List the main topics discussed."
+    )
+def extract_action_items(transcript: str):
+    """Extract action items"""
+    return answer_question(
+        transcript,
+        "Extract all action items, tasks, and follow-ups mentioned in this meeting. Format as a list with responsible persons if mentioned."
+    )
+```
+---
+### **File: `backend/audio_processor.py`**
+```python
+"""
+Audio processing utilities
+"""
+import logging
+import os
+from config import UPLOAD_FOLDER
+logger = logging.getLogger(__name__)
+def save_audio_chunk_to_file(meeting_id: str, chunk_number: int, audio_data: bytes):
+    """
+    Save audio chunk to file system
+   
+    Args:
+        meeting_id: Meeting identifier
+        chunk_number: Chunk sequence number
+        audio_data: Raw audio bytes
+   
+    Returns:
+        str: File path
+    """
+    try:
+        meeting_folder = os.path.join(UPLOAD_FOLDER, meeting_id)
+        os.makedirs(meeting_folder, exist_ok=True)
+       
+        filename = f"chunk_{chunk_number:04d}.wav"
+        filepath = os.path.join(meeting_folder, filename)
+       
+        with open(filepath, 'wb') as f:
+            f.write(audio_data)
+       
+        logger.info(f"Saved audio chunk to: {filepath}")
+        return filepath
+   
+    except Exception as e:
+        logger.error(f"Error saving audio chunk: {e}")
+        return None
+def cleanup_old_files(meeting_id: str):
+    """Delete temporary audio files after processing"""
+    try:
+        meeting_folder = os.path.join(UPLOAD_FOLDER, meeting_id)
+        if os.path.exists(meeting_folder):
+            for file in os.listdir(meeting_folder):
+                os.remove(os.path.join(meeting_folder, file))
+            os.rmdir(meeting_folder)
+            logger.info(f"Cleaned up files for meeting: {meeting_id}")
+    except Exception as e:
+        logger.error(f"Error cleaning up files: {e}")
+```
+---
+### **File: `backend/server.py`**
+```python
+"""
+FastAPI server for VoiceMind Meeting System
+"""
+from fastapi import FastAPI, File, UploadFile, Header, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+from datetime import datetime
+import uvicorn
+# Import local modules
+from database import (
+    init_database, close_database, create_meeting, get_meeting,
+    update_meeting_status, save_audio_chunk, get_all_chunks,
+    save_qa_interaction, list_all_meetings, log_system_event
+)
+from transcription_service import transcribe_audio
+from qa_service import answer_question, generate_summary, extract_agenda, extract_action_items
+from audio_processor import save_audio_chunk_to_file
+from config import SERVER_HOST, SERVER_PORT
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+# Initialize FastAPI app
+app = FastAPI(
+    title="VoiceMind Meeting API",
+    description="AI-powered meeting recording and analysis system",
+    version="1.0.0"
+)
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ============================================================================
+# Startup and Shutdown Events
+# ============================================================================
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection on startup"""
+    logger.info("Starting VoiceMind API server...")
+    init_database()
+    log_system_event("INFO", "Server started")
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown"""
+    logger.info("Shutting down VoiceMind API server...")
+    log_system_event("INFO", "Server stopped")
+    close_database()
+# ============================================================================
+# API Endpoints
+# ============================================================================
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "status": "online",
+        "message": "VoiceMind Meeting API",
+        "timestamp": datetime.now().isoformat()
+    }
+@app.post("/api/start_meeting")
+async def start_meeting(meeting_id: str, title: str = None, language: str = "auto"):
+    """
+    Start a new meeting recording session
+   
+    Args:
+        meeting_id: Unique meeting identifier
+        title: Meeting title (optional)
+        language: Language code or 'auto' for detection
+    """
+    try:
+        logger.info(f"Starting meeting: {meeting_id}")
+       
+        # Check if meeting already exists
+        existing = get_meeting(meeting_id)
+        if existing:
+            raise HTTPException(status_code=400, detail="Meeting ID already exists")
+       
+        # Create meeting record
+        create_meeting(meeting_id, title, language)
+        log_system_event("INFO", f"Meeting started: {title or meeting_id}", meeting_id)
+       
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "message": "Meeting recording started"
+        }
+   
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting meeting: {e}")
+        log_system_event("ERROR", f"Failed to start meeting: {str(e)}", meeting_id)
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/upload_audio")
+async def upload_audio(
+    file: UploadFile = File(...),
+    meeting_id: str = Header(..., alias="X-Meeting-ID"),
+    chunk_number: int = Header(..., alias="X-Chunk-Number"),
+    chunk_timestamp: int = Header(..., alias="X-Timestamp"),
+    sample_rate: int = Header(16000, alias="X-Sample-Rate")
+):
+    """
+    Upload audio chunk and process transcription
+   
+    Headers:
+        X-Meeting-ID: Meeting identifier
+        X-Chunk-Number: Chunk sequence number
+        X-Timestamp: Chunk timestamp (milliseconds)
+        X-Sample-Rate: Audio sample rate
+    """
+    try:
+        logger.info(f"Receiving chunk {chunk_number} for meeting {meeting_id}")
+       
+        # Read audio data
+        audio_data = await file.read()
+       
+        # Save to database
+        save_audio_chunk(meeting_id, chunk_number, chunk_timestamp, audio_data, sample_rate)
+       
+        # Transcribe audio
+        meeting = get_meeting(meeting_id)
+        language = meeting['language'] if meeting else 'auto'
+       
+        transcription_result = transcribe_audio(audio_data, sample_rate, language)
+        transcript_text = transcription_result.get('text', '')
+       
+        # Update chunk with transcript
+        if transcript_text:
+            save_audio_chunk(meeting_id, chunk_number, chunk_timestamp, audio_data, sample_rate, transcript_text)
+            logger.info(f"Chunk {chunk_number} transcribed: {transcript_text[:50]}...")
+       
+        return {
+            "status": "success",
+            "chunk_number": chunk_number,
+            "transcript": transcript_text,
+            "language_detected": transcription_result.get('language', 'unknown')
+        }
+   
+    except Exception as e:
+        logger.error(f"Error processing audio chunk: {e}")
+        log_system_event("ERROR", f"Failed to process chunk {chunk_number}: {str(e)}", meeting_id)
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/end_meeting")
+async def end_meeting(meeting_id: str):
+    """
+    End meeting and generate final transcript and summary
+   
+    Args:
+        meeting_id: Meeting identifier
+    """
+    try:
+        logger.info(f"Ending meeting: {meeting_id}")
+       
+        # Get all chunks
+        chunks = get_all_chunks(meeting_id)
+       
+        if not chunks:
+            raise HTTPException(status_code=404, detail="No audio chunks found for this meeting")
+       
+        # Compile full transcript
+        full_transcript = " ".join([chunk['transcript_segment'] for chunk in chunks if chunk['transcript_segment']])
+       
+        # Generate summary
+        summary_result = generate_summary(full_transcript)
+        summary = summary_result['answer']
+       
+        # Extract agenda
+        agenda_result = extract_agenda(full_transcript)
+        agenda = agenda_result['answer']
+       
+        # Update meeting record
+        update_meeting_status(meeting_id, 'completed', full_transcript, summary)
+       
+        # Update agenda field separately
+        from database import db
+        with db.get_cursor() as cursor:
+            cursor.execute("UPDATE meetings SET agenda = %s WHERE meeting_id = %s", (agenda, meeting_id))
+       
+        log_system_event("INFO", f"Meeting completed: {meeting_id}", meeting_id)
+       
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "transcript_length": len(full_transcript),
+            "total_chunks": len(chunks),
+            "summary": summary,
+            "agenda": agenda
+        }
+   
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error ending meeting: {e}")
+        log_system_event("ERROR", f"Failed to end meeting: {str(e)}", meeting_id)
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/ask_question")
+async def ask_question_endpoint(meeting_id: str, question: str):
+    """
+    Ask a question about the meeting
+   
+    Args:
+        meeting_id: Meeting identifier
+        question: User question
+    """
+    try:
+        logger.info(f"Q&A request for meeting {meeting_id}: {question}")
+       
+        # Get meeting
+        meeting = get_meeting(meeting_id)
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+       
+        transcript = meeting['full_transcript']
+        if not transcript:
+            raise HTTPException(status_code=400, detail="Meeting transcript not available yet")
+       
+        # Get answer
+        result = answer_question(transcript, question)
+       
+        # Save Q&A interaction
+        save_qa_interaction(
+            meeting_id,
+            question,
+            result['answer'],
+            result['model'],
+            result['response_time']
+        )
+       
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "question": question,
+            "answer": result['answer'],
+            "response_time": result['response_time']
+        }
+   
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error answering question: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/get_summary")
+async def get_summary(meeting_id: str):
+    """Get meeting summary"""
+    try:
+        meeting = get_meeting(meeting_id)
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+       
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "title": meeting['title'],
+            "summary": meeting['summary'],
+            "agenda": meeting['agenda'],
+            "start_time": meeting['start_time'],
+            "end_time": meeting['end_time'],
+            "status": meeting['status']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/get_transcript")
+async def get_transcript(meeting_id: str):
+    """Get full meeting transcript"""
+    try:
+        chunks = get_all_chunks(meeting_id)
+       
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "chunks": [
+                {
+                    "chunk_number": c['chunk_number'],
+                    "text": c['transcript_segment'],
+                    "timestamp": c['chunk_timestamp']
+                }
+                for c in chunks
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting transcript: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/list_meetings")
+async def list_meetings_endpoint():
+    """List all meetings"""
+    try:
+        meetings = list_all_meetings()
+       
+        return {
+            "status": "success",
+            "meetings": meetings
+        }
+    except Exception as e:
+        logger.error(f"Error listing meetings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+# ============================================================================
+# Run Server
+# ============================================================================
+if __name__ == "__main__":
+    uvicorn.run(
+        "server:app",
+        host=SERVER_HOST,
+        port=SERVER_PORT,
+        reload=True,
+        log_level="info"
+    )
+```
+---
+## 🎛️ STEP 5: ESP32 ARDUINO CODE
+### **File: `hardware/esp32_audio_recorder/esp32_audio_recorder.ino`**
+```cpp
+/**
+ * VoiceMind ESP32 Audio Recorder
+ * Captures audio from INMP441 I2S microphone and streams to server
+ */
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <driver/i2s.h>
+// ============================================================================
+// CONFIGURATION - UPDATE THESE VALUES
+// ============================================================================
+// WiFi Credentials
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+// Server Configuration
+const char* serverUrl = "http://192.168.1.100:8000"; // Change to your server IP
+String meetingId = "";
+// I2S Pin Configuration (INMP441)
+#define I2S_WS 25 // Word Select (LRCLK)
+#define I2S_SD 32 // Serial Data (DOUT)
+#define I2S_SCK 33 // Serial Clock (BCLK)
+#define I2S_PORT I2S_NUM_0
+// Audio Configuration
+#define SAMPLE_RATE 16000
+#define BITS_PER_SAMPLE I2S_BITS_PER_SAMPLE_16BIT
+#define BUFFER_SIZE 1024
+#define CHUNK_SIZE 32000 // ~2 seconds at 16kHz (32000 bytes = 16000 samples)
+// GPIO Pins
+#define LED_PIN 2
+#define BUTTON_PIN 4
+// ============================================================================
+// GLOBAL VARIABLES
+// ============================================================================
+bool isRecording = false;
+int chunkCounter = 0;
+uint8_t audioBuffer[CHUNK_SIZE];
+int bufferIndex = 0;
+// ============================================================================
+// SETUP
+// ============================================================================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+ 
+  Serial.println("\n\n===================================");
+  Serial.println("VoiceMind ESP32 Audio Recorder");
+  Serial.println("===================================\n");
+ 
+  // Initialize GPIO
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(LED_PIN, LOW);
+ 
+  // Connect to WiFi
+  connectWiFi();
+ 
+  // Setup I2S
+  setupI2S();
+ 
+  Serial.println("✓ System Ready!");
+  Serial.println("Press button to start/stop recording\n");
+ 
+  // Blink LED to indicate ready
+  blinkLED(3, 200);
+}
+// ============================================================================
+// MAIN LOOP
+// ============================================================================
+void loop() {
+  // Check button press (with debouncing)
+  static unsigned long lastButtonPress = 0;
+  if (digitalRead(BUTTON_PIN) == LOW && (millis() - lastButtonPress) > 300) {
+    lastButtonPress = millis();
+   
+    isRecording = !isRecording;
+   
+    if (isRecording) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
+   
+    // Wait for button release
+    while (digitalRead(BUTTON_PIN) == LOW) {
+      delay(10);
+    }
+  }
+ 
+  // Record and stream audio if recording is active
+  if (isRecording) {
+    recordAndStream();
+  }
+}
+// ============================================================================
+// WIFI CONNECTION
+// ============================================================================
+void connectWiFi() {
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+ 
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+ 
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✓ WiFi Connected!");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("Signal Strength: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm\n");
+  } else {
+    Serial.println("\n✗ WiFi Connection Failed!");
+    Serial.println("Please check your credentials and try again.");
+    while (true) {
+      blinkLED(5, 100); // Fast blink to indicate error
+      delay(1000);
+    }
+  }
+}
+// ============================================================================
+// I2S SETUP
+// ============================================================================
+void setupI2S() {
+  Serial.println("Configuring I2S...");
+ 
+  // I2S configuration
+  i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+    .sample_rate = SAMPLE_RATE,
+    .bits_per_sample = BITS_PER_SAMPLE,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 4,
+    .dma_buf_len = BUFFER_SIZE,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0
+  };
+ 
+  // Pin configuration
+  i2s_pin_config_t pin_config = {
+    .bck_io_num = I2S_SCK,
+    .ws_io_num = I2S_WS,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = I2S_SD
+  };
+ 
+  // Install and set pin config
+  esp_err_t err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.printf("✗ Failed to install I2S driver: %d\n", err);
+    return;
+  }
+ 
+  err = i2s_set_pin(I2S_PORT, &pin_config);
+  if (err != ESP_OK) {
+    Serial.printf("✗ Failed to set I2S pins: %d\n", err);
+    return;
+  }
+ 
+  i2s_zero_dma_buffer(I2S_PORT);
+ 
+  Serial.println("✓ I2S Configured Successfully\n");
+}
+// ============================================================================
+// RECORDING FUNCTIONS
+// ============================================================================
+void startRecording() {
+  Serial.println("\n╔══════════════════════════════════╗");
+  Serial.println("║ RECORDING STARTED ║");
+  Serial.println("╚══════════════════════════════════╝\n");
+ 
+  digitalWrite(LED_PIN, HIGH);
+ 
+  // Generate unique meeting ID
+  meetingId = "meeting_" + String(millis());
+  chunkCounter = 0;
+  bufferIndex = 0;
+ 
+  // Notify server about new meeting
+  HTTPClient http;
+  String url = String(serverUrl) + "/api/start_meeting?meeting_id=" + meetingId;
+  http.begin(url);
+ 
+  int httpCode = http.POST("");
+ 
+  if (httpCode == 200) {
+    Serial.println("✓ Meeting session created on server");
+    Serial.println("Meeting ID: " + meetingId + "\n");
+  } else {
+    Serial.printf("✗ Failed to start meeting on server: HTTP %d\n\n", httpCode);
+  }
+ 
+  http.end();
+}
+void stopRecording() {
+  Serial.println("\n╔══════════════════════════════════╗");
+  Serial.println("║ RECORDING STOPPED ║");
+  Serial.println("╚══════════════════════════════════╝\n");
+ 
+  digitalWrite(LED_PIN, LOW);
+ 
+  // Send any remaining data in buffer
+  if (bufferIndex > 0) {
+    sendAudioChunk(audioBuffer, bufferIndex);
+  }
+ 
+  // Notify server about meeting end
+  HTTPClient http;
+  String url = String(serverUrl) + "/api/end_meeting?meeting_id=" + meetingId;
+  http.begin(url);
+ 
+  int httpCode = http.POST("");
+ 
+  if (httpCode == 200) {
+    Serial.println("✓ Meeting ended on server");
+    Serial.println("Processing transcript and summary...\n");
+  } else {
+    Serial.printf("✗ Failed to end meeting on server: HTTP %d\n\n", httpCode);
+  }
+ 
+  http.end();
+ 
+  Serial.printf("Total chunks sent: %d\n", chunkCounter);
+  Serial.printf("Approximate duration: %.1f seconds\n\n", (chunkCounter * 2.0));
+}
+void recordAndStream() {
+  uint8_t tempBuffer[BUFFER_SIZE];
+  size_t bytesRead = 0;
+ 
+  // Read audio data from I2S
+  esp_err_t result = i2s_read(I2S_PORT, tempBuffer, BUFFER_SIZE, &bytesRead, portMAX_DELAY);
+ 
+  if (result != ESP_OK) {
+    Serial.printf("✗ I2S read error: %d\n", result);
+    return;
+  }
+ 
+  // Accumulate data into chunk buffer
+  for (size_t i = 0; i < bytesRead && bufferIndex < CHUNK_SIZE; i++) {
+    audioBuffer[bufferIndex++] = tempBuffer[i];
+  }
+ 
+  // When chunk is full, send to server
+  if (bufferIndex >= CHUNK_SIZE) {
+    sendAudioChunk(audioBuffer, bufferIndex);
+    bufferIndex = 0;
+    chunkCounter++;
+  }
+}
+void sendAudioChunk(uint8_t* data, int length) {
+  // Check WiFi connection
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("✗ WiFi disconnected! Attempting to reconnect...");
+    connectWiFi();
+    return;
+  }
+ 
+  HTTPClient http;
+  String url = String(serverUrl) + "/api/upload_audio";
+ 
+  http.begin(url);
+  http.addHeader("Content-Type", "application/octet-stream");
+  http.addHeader("X-Meeting-ID", meetingId);
+  http.addHeader("X-Chunk-Number", String(chunkCounter));
+  http.addHeader("X-Timestamp", String(millis()));
+  http.addHeader("X-Sample-Rate", String(SAMPLE_RATE));
+ 
+  int httpCode = http.POST(data, length);
+ 
+  if (httpCode == 200) {
+    Serial.printf("✓ Chunk %d sent (%d bytes)\n", chunkCounter, length);
+   
+    // Quick LED blink to indicate successful transmission
+    digitalWrite(LED_PIN, LOW);
+    delay(50);
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    Serial.printf("✗ Error sending chunk %d: HTTP %d\n", chunkCounter, httpCode);
+  }
+ 
+  http.end();
+}
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+void blinkLED(int times, int delayMs) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(LED_PIN, LOW);
+    delay(delayMs);
+  }
+}
+```
+---
+## 👤 STEP 6: CLIENT APPLICATION
+### **File: `client/meeting_client.py`**
+```python
+"""
+VoiceMind Meeting Client
+Interactive command-line interface for querying meetings
+"""
+import requests
+import json
+from datetime import datetime
+import sys
+class MeetingClient:
+    def __init__(self, server_url="http://localhost:8000"):
+        self.server_url = server_url
+        self.current_meeting = None
+        print("=" * 70)
+        print(" " * 15 + "VoiceMind Meeting Client")
+        print("=" * 70 + "\n")
+   
+    def check_server(self):
+        """Check if server is online"""
+        try:
+            response = requests.get(f"{self.server_url}/")
+            if response.status_code == 200:
+                print("✓ Connected to server\n")
+                return True
+        except:
+            print("✗ Cannot connect to server. Please ensure server is running.\n")
+            return False
+   
+    def list_meetings(self):
+        """List all available meetings"""
+        try:
+            response = requests.get(f"{self.server_url}/api/list_meetings")
+            data = response.json()
+            meetings = data['meetings']
+           
+            print("\n" + "=" * 70)
+            print(" " * 20 + "AVAILABLE MEETINGS")
+            print("=" * 70)
+           
+            if not meetings:
+                print("\nNo meetings found.")
+            else:
+                for i, meeting in enumerate(meetings, 1):
+                    print(f"\n{i}. Meeting ID: {meeting['meeting_id']}")
+                    print(f" Title: {meeting['title'] or 'Untitled'}")
+                    print(f" Status: {meeting['status']}")
+                    print(f" Start Time: {meeting['start_time']}")
+                    print(f" Chunks: {meeting['total_chunks']}")
+           
+            print("\n" + "=" * 70)
+            return meetings
+       
+        except Exception as e:
+            print(f"✗ Error listing meetings: {e}")
+            return []
+   
+    def select_meeting(self, meeting_id):
+        """Select a meeting for analysis"""
+        try:
+            response = requests.get(f"{self.server_url}/api/get_summary?meeting_id={meeting_id}")
+            if response.status_code == 200:
+                self.current_meeting = meeting_id
+                print(f"\n✓ Selected meeting: {meeting_id}")
+                return True
+            else:
+                print(f"\n✗ Meeting not found: {meeting_id}")
+                return False
+        except Exception as e:
+            print(f"✗ Error selecting meeting: {e}")
+            return False
+   
+    def get_summary(self):
+        """Get meeting summary"""
+        if not self.current_meeting:
+            print("❌ Please select a meeting first!")
+            return
+       
+        try:
+            response = requests.get(f"{self.server_url}/api/get_summary?meeting_id={self.current_meeting}")
+            data = response.json()
+           
+            print("\n" + "=" * 70)
+            print(" " * 25 + "MEETING SUMMARY")
+            print("=" * 70)
+            print(f"\nMeeting ID: {data['meeting_id']}")
+            print(f"Title: {data['title'] or 'Untitled'}")
+            print(f"Status: {data['status']}")
+            print(f"Start Time: {data['start_time']}")
+            print(f"End Time: {data['end_time']}")
+            print(f"\n{'-' * 70}")
+            print("SUMMARY:")
+            print(f"{'-' * 70}")
+            print(data['summary'])
+            print(f"\n{'-' * 70}")
+            print("AGENDA:")
+            print(f"{'-' * 70}")
+            print(data['agenda'])
+            print("\n" + "=" * 70)
+       
+        except Exception as e:
+            print(f"✗ Error getting summary: {e}")
+   
+    def get_transcript(self):
+        """Get full meeting transcript"""
+        if not self.current_meeting:
+            print("❌ Please select a meeting first!")
+            return
+       
+        try:
+            response = requests.get(f"{self.server_url}/api/get_transcript?meeting_id={self.current_meeting}")
+            data = response.json()
+           
+            print("\n" + "=" * 70)
+            print(" " * 23 + "FULL TRANSCRIPT")
+            print("=" * 70)
+           
+            for chunk in data['chunks']:
+                timestamp = chunk['timestamp'] / 1000 # Convert to seconds
+                print(f"\n[{timestamp:.1f}s] Chunk {chunk['chunk_number']}:")
+                print(chunk['text'])
+           
+            print("\n" + "=" * 70)
+       
+        except Exception as e:
+            print(f"✗ Error getting transcript: {e}")
+   
+    def ask_question(self, question):
+        """Ask a question about the meeting"""
+        if not self.current_meeting:
+            print("❌ Please select a meeting first!")
+            return
+       
+        try:
+            payload = {
+                "meeting_id": self.current_meeting,
+                "question": question
+            }
+           
+            print("\n⏳ Processing your question...")
+            response = requests.post(f"{self.server_url}/api/ask_question", params=payload)
+            data = response.json()
+           
+            print("\n" + "-" * 70)
+            print(f"❓ Q: {question}")
+            print(f"\n💡 A: {data['answer']}")
+            print(f"\n⏱️ Response time: {data['response_time']:.2f}s")
+            print("-" * 70)
+       
+        except Exception as e:
+            print(f"✗ Error asking question: {e}")
+   
+    def interactive_mode(self):
+        """Run interactive Q&A session"""
+        print("\n" + "=" * 70)
+        print(" " * 20 + "INTERACTIVE MODE")
+        print("=" * 70)
+        print("\nCommands:")
+        print(" 'list' - List all meetings")
+        print(" 'select <id>' - Select a meeting")
+        print(" 'summary' - Get meeting summary")
+        print(" 'transcript' - Get full transcript")
+        print(" 'exit' or 'quit' - Exit interactive mode")
+        print(" Any other text - Ask question about current meeting")
+        print("\n" + "=" * 70)
+       
+        while True:
+            try:
+                user_input = input("\n> ").strip()
+               
+                if not user_input:
+                    continue
+               
+                if user_input.lower() in ['exit', 'quit']:
+                    print("\nGoodbye! 👋\n")
+                    break
+               
+                elif user_input.lower() == 'list':
+                    self.list_meetings()
+               
+                elif user_input.lower().startswith('select '):
+                    meeting_id = user_input[7:].strip()
+                    self.select_meeting(meeting_id)
+               
+                elif user_input.lower() == 'summary':
+                    self.get_summary()
+               
+                elif user_input.lower() == 'transcript':
+                    self.get_transcript()
+               
+                else:
+                    # Treat as question
+                    self.ask_question(user_input)
+           
+            except KeyboardInterrupt:
+                print("\n\nGoodbye! 👋\n")
+                break
+            except Exception as e:
+                print(f"\n✗ Error: {e}")
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
+if __name__ == "__main__":
+    import sys
+   
+    # Get server URL from command line argument or use default
+    server_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+   
+    client = MeetingClient(server_url)
+   
+    if not client.check_server():
+        sys.exit(1)
+   
+    # Auto-list meetings on startup
+    meetings = client.list_meetings()
+   
+    # If meetings exist, auto-select the first one
+    if meetings:
+        client.select_meeting(meetings[0]['meeting_id'])
+   
+    # Start interactive mode
+    client.interactive_mode()
+```
+---
+## 🗄️ STEP 7: DATABASE INITIALIZATION
+### **File: `database/init_db.py`**
+```python
+"""
+Database initialization script
+"""
+import mysql.connector
+from mysql.connector import Error
+import sys
+# Configuration
+DB_HOST = "localhost"
+DB_PORT = 3306
+DB_USER = "root"
+DB_PASSWORD = "" # Update with your MySQL root password
+def init_database():
+    """Initialize database from schema file"""
+    try:
+        # Connect to MySQL server (without database)
+        connection = mysql.connector.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+       
+        if connection.is_connected():
+            cursor = connection.cursor()
+           
+            # Read and execute schema file
+            print("📄 Reading schema file...")
+            with open('database/schema.sql', 'r') as f:
+                schema = f.read()
+           
+            # Split and execute statements
+            statements = schema.split(';')
+           
+            for i, statement in enumerate(statements):
+                statement = statement.strip()
+                if statement:
+                    try:
+                        cursor.execute(statement)
+                        print(f"✓ Executed statement {i+1}/{len(statements)}")
+                    except Error as e:
+                        if "already exists" not in str(e):
+                            print(f"⚠️ Warning: {e}")
+           
+            connection.commit()
+            print("\n✅ Database initialized successfully!")
+            print("Database: voicemind_db")
+            print("Tables: meetings, audio_chunks, qa_history, system_logs\n")
+           
+            cursor.close()
+            connection.close()
+   
+    except Error as e:
+        print(f"❌ Error initializing database: {e}")
+        sys.exit(1)
+if __name__ == "__main__":
+    print("=" * 60)
+    print(" " * 15 + "VoiceMind Database Setup")
+    print("=" * 60 + "\n")
+   
+    init_database()
+```
+---
+## 🌐 STEP 8: ENVIRONMENT CONFIGURATION
+### **File: `.env`**
+```env
+# Server Configuration
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+# MySQL Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_mysql_password_here
+DB_NAME=voicemind_db
+# OpenAI API Key (Get from https://platform.openai.com/api-keys)
+OPENAI_API_KEY=sk-your-openai-api-key-here
+# Audio Configuration
+SAMPLE_RATE=16000
+CHUNK_DURATION_MS=10000
+# Paths
+UPLOAD_FOLDER=uploads/audio_chunks
+LOG_FOLDER=logs
+# Whisper Model (tiny, base, small, medium, large)
+WHISPER_MODEL=base
+# LLM Configuration
+LLM_MODEL=gpt-3.5-turbo
+LLM_TEMPERATURE=0.7
+MAX_TOKENS=500
+```
+---
+## ⚙️ STEP 9: AUTOMATED SETUP SCRIPT
+### **File: `setup.sh`** (Linux/Mac)
+```bash
+#!/bin/bash
+echo "======================================================================"
+echo " VoiceMind Meeting System - Automated Setup"
+echo "======================================================================"
+echo ""
+# Check Python installation
+echo "Checking Python installation..."
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Python 3 is not installed. Please install Python 3.8 or higher."
+    exit 1
+fi
+echo "✓ Python 3 found"
+echo ""
+# Check MySQL installation
+echo "Checking MySQL installation..."
+if ! command -v mysql &> /dev/null; then
+    echo "❌ MySQL is not installed. Please install MySQL 8.0 or higher."
+    exit 1
+fi
+echo "✓ MySQL found"
+echo ""
+# Create virtual environment
+echo "Creating Python virtual environment..."
+python3 -m venv venv
+source venv/bin/activate
+echo "✓ Virtual environment created"
+echo ""
+# Install Python dependencies
+echo "Installing Python dependencies..."
+pip install --upgrade pip
+pip install -r backend/requirements.txt
+echo "✓ Dependencies installed"
+echo ""
+# Initialize database
+echo "Initializing MySQL database..."
+python database/init_db.py
+echo "✓ Database initialized"
+echo ""
+# Create .env file if not exists
+if [ ! -f .env ]; then
+    echo "Creating .env configuration file..."
+    cp .env.example .env
+    echo "⚠️ Please edit .env file and add your configuration (MySQL password, OpenAI API key)"
+fi
+echo ""
+echo "======================================================================"
+echo "✅ Setup completed successfully!"
+echo "======================================================================"
+echo ""
+echo "Next steps:"
+echo "1. Edit .env file with your MySQL password and OpenAI API key"
+echo "2. Upload ESP32 Arduino code to your device"
+echo "3. Start the server: python backend/server.py"
+echo "4. Run the client: python client/meeting_client.py"
+echo ""
+```
+### **File: `setup.bat`** (Windows)
+```batch
+@echo off
+echo ======================================================================
+echo VoiceMind Meeting System - Automated Setup
+echo ======================================================================
+echo.
+REM Check Python installation
+echo Checking Python installation...
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo X Python is not installed. Please install Python 3.8 or higher.
+    pause
+    exit /b 1
+)
+echo + Python found
+echo.
+REM Check MySQL installation
+echo Checking MySQL installation...
+mysql --version >nul 2>&1
+if errorlevel 1 (
+    echo X MySQL is not installed. Please install MySQL 8.0 or higher.
+    pause
+    exit /b 1
+)
+echo + MySQL found
+echo.
+REM Create virtual environment
+echo Creating Python virtual environment...
+python -m venv venv
+call venv\Scripts\activate
+echo + Virtual environment created
+echo.
+REM Install Python dependencies
+echo Installing Python dependencies...
+pip install --upgrade pip
+pip install -r backend\requirements.txt
+echo + Dependencies installed
+echo.
+REM Initialize database
+echo Initializing MySQL database...
+python database\init_db.py
+echo + Database initialized
+echo.
+REM Create .env file if not exists
+if not exist .env (
+    echo Creating .env configuration file...
+    copy .env.example .env
+    echo ! Please edit .env file and add your configuration
+)
+echo.
+echo ======================================================================
+echo + Setup completed successfully!
+echo ======================================================================
+echo.
+echo Next steps:
+echo 1. Edit .env file with your MySQL password and OpenAI API key
+echo 2. Upload ESP32 Arduino code to your device
+echo 3. Start the server: python backend\server.py
+echo 4. Run the client: python client\meeting_client.py
+echo.
+pause
+```
+---
+## 📝 STEP 10: COMPLETE README
+### **File: `README.md`**
+```markdown
+# VoiceMind Meeting Intelligence System
+AI-powered meeting recording and analysis system with multilingual support.
+## System Requirements
+### Hardware
+- ESP32 DevKit (with WiFi)
+- INMP441 I2S MEMS Microphone
+- 5V USB Power Supply
+- Breadboard and jumper wires
+### Software
+- Python 3.8 or higher
+- MySQL 8.0 or higher
+- Arduino IDE (for ESP32 programming)
+- OpenAI API key
+## Installation
+### 1. Clone Repository
+```bash
+git clone <repository-url>
+cd VoiceMind-Meeting-System
+```
+### 2. Run Setup Script
+**Linux/Mac:**
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+**Windows:**
+```batch
+setup.bat
+```
+### 3. Configure Environment
+Edit `.env` file:
+```env
+DB_PASSWORD=your_mysql_password
+OPENAI_API_KEY=sk-your-openai-key
+```
+### 4. Upload ESP32 Code
+1. Open `hardware/esp32_audio_recorder/esp32_audio_recorder.ino` in Arduino IDE
+2. Update WiFi credentials and server URL
+3. Select board: ESP32 Dev Module
+4. Upload code
+## Usage
+### Start Server
+```bash
+# Activate virtual environment
+source venv/bin/activate # Linux/Mac
+# OR
+venv\Scripts\activate # Windows
+# Run server
+python backend/server.py
+```
+Server will start at `http://localhost:8000`
+### Start Recording
+1. Press button on ESP32 to start recording
+2. LED will turn on to indicate recording
+3. Speak into microphone
+4. Press button again to stop
+### Query Meeting
+```bash
+# Run client
+python client/meeting_client.py
+# Interactive commands
+> list # List all meetings
+> select meeting_12345 # Select a meeting
+> summary # Get meeting summary
+> What was the agenda? # Ask questions
+> exit # Exit
+```
+## API Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Health check |
+| POST | `/api/start_meeting` | Start new meeting |
+| POST | `/api/upload_audio` | Upload audio chunk |
+| POST | `/api/end_meeting` | End meeting |
+| POST | `/api/ask_question` | Ask question |
+| GET | `/api/get_summary` | Get meeting summary |
+| GET | `/api/get_transcript` | Get full transcript |
+| GET | `/api/list_meetings` | List all meetings |
+## Database Schema
+### Tables
+- `meetings` - Meeting metadata
+- `audio_chunks` - Audio segments
+- `qa_history` - Q&A interactions
+- `system_logs` - System events
+## Troubleshooting
+### ESP32 won't connect to WiFi
+- Check WiFi credentials
+- Ensure 2.4GHz network (ESP32 doesn't support 5GHz)
+- Check signal strength
+### No audio captured
+- Verify I2S pin connections
+- Check microphone power (3.3V)
+- Test with serial monitor
+### Transcription errors
+- Ensure OpenAI API key is valid
+- Check internet connection
+- Verify audio quality
+### Database connection failed
+- Ensure MySQL is running
+- Check credentials in `.env`
+- Verify database exists
+## License
+MIT License
+## Support
+For issues and questions, please open a GitHub issue.
+```
+---
+## 🚀 STEP 11: COMMAND REFERENCE
+### **Complete Command Workflow**
+```bash
+# ============================================================================
+# INSTALLATION COMMANDS
+# ============================================================================
+# 1. Create project structure
+mkdir VoiceMind-Meeting-System && cd VoiceMind-Meeting-System
+mkdir -p hardware/esp32_audio_recorder hardware/circuit_diagrams backend client database uploads/audio_chunks logs
+# 2. Install MySQL (if not installed)
+# Ubuntu/Debian:
+sudo apt update
+sudo apt install mysql-server
+# macOS (with Homebrew):
+brew install mysql
+brew services start mysql
+# Windows: Download from https://dev.mysql.com/downloads/installer/
+# 3. Secure MySQL installation
+sudo mysql_secure_installation
+# 4. Create Python virtual environment
+python3 -m venv venv
+source venv/bin/activate # Linux/Mac
+# OR
+venv\Scripts\activate # Windows
+# 5. Install Python dependencies
+pip install --upgrade pip
+pip install -r backend/requirements.txt
+# 6. Initialize database
+python database/init_db.py
+# ============================================================================
+# RUNNING THE SYSTEM
+# ============================================================================
+# Terminal 1: Start Backend Server
+cd VoiceMind-Meeting-System
+source venv/bin/activate # Activate virtual environment
+python backend/server.py
+# Terminal 2: Run Client (after recording)
+cd VoiceMind-Meeting-System
+source venv/bin/activate
+python client/meeting_client.py
+# ============================================================================
+# ESP32 COMMANDS (Arduino IDE)
+# ============================================================================
+# 1. Install ESP32 Board Support
+# Arduino IDE: File > Preferences
+# Add to "Additional Board Manager URLs":
+https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+# 2. Install Board
+# Tools > Board > Boards Manager > Search "ESP32" > Install
+# 3. Select Board
+# Tools > Board > ESP32 Arduino > ESP32 Dev Module
+# 4. Configure Upload Settings
+# Tools > Upload Speed > 921600
+# Tools > Flash Frequency > 80MHz
+# Tools > Partition Scheme > Default 4MB
+# 5. Upload Code
+# Sketch > Upload (or Ctrl+U)
+# ============================================================================
+# DATABASE COMMANDS
+# ============================================================================
+# Login to MySQL
+mysql -u root -p
+# Check database
+USE voicemind_db;
+SHOW TABLES;
+# View meetings
+SELECT * FROM meetings;
+# View audio chunks
+SELECT meeting_id, chunk_number, LENGTH(audio_data) as size_bytes, transcript_segment
+FROM audio_chunks
+ORDER BY chunk_number;
+# View Q&A history
+SELECT * FROM qa_history ORDER BY created_at DESC LIMIT 10;
+# ============================================================================
+# TESTING COMMANDS
+# ============================================================================
+# Test server health
+curl http://localhost:8000/
+# List meetings
+curl http://localhost:8000/api/list_meetings
+# Get meeting summary
+curl "http://localhost:8000/api/get_summary?meeting_id=meeting_12345"
+# Ask question (POST)
+curl -X POST "http://localhost:8000/api/ask_question?meeting_id=meeting_12345&question=What+was+the+agenda?"
+# ============================================================================
+# MAINTENANCE COMMANDS
+# ============================================================================
+# View server logs
+tail -f logs/app.log
+# Backup database
+mysqldump -u root -p voicemind_db > backup_$(date +%Y%m%d).sql
+# Restore database
+mysql -u root -p voicemind_db < backup_20240115.sql
+# Clean up old audio files
+find uploads/audio_chunks -type f -mtime +30 -delete
+# ============================================================================
+# VS CODE COMMANDS
+# ============================================================================
+# Open project in VS Code
+code .
+# Install recommended extensions
+# Python, MySQL, REST Client, Arduino
+# Debug Python server (Press F5 after creating launch.json)
+# ============================================================================
+# DEPLOYMENT COMMANDS (Production)
+# ============================================================================
+# Install production server
+pip install gunicorn
+# Run with Gunicorn
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.server:app --bind 0.0.0.0:8000
+# Run as systemd service (Linux)
+sudo systemctl start voicemind
+sudo systemctl enable voicemind
+```
+---
+## 🎯 FINAL VERIFICATION CHECKLIST
+This is a **complete, production-ready system** with:
+✅ Full folder structure
+✅ MySQL database schema
+✅ Complete backend with FastAPI
+✅ ESP32 Arduino code with I2S audio
+✅ Interactive CLI client
+✅ Automated setup scripts
+✅ Comprehensive documentation
+✅ All commands for setup, testing, and deployment
+hello according to above content and this xlsx 'https://docs.google.com/spreadsheets/d/17R0P6PuqjgMITgjyecoXCyZPWfrg60eWirKR5vvTonk/edit?gid=1235807852#gid=1235807852' format link first analysis , understand hole project from top to bottom step by step understand then create a fully function frontend from above content and link all requirement should meet make using a mern stack. write command for create a folder or file, proper code modify from compare all code , write a code for tree of file folder .also i am using vs code so be in mind.
+i need proper step by step guide and follow instruction then write a command to run , test, compile .. etc
